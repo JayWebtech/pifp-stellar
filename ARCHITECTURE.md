@@ -13,9 +13,10 @@
 5. [Core Flows](#5-core-flows)
 6. [Storage Design](#6-storage-design)
 7. [Threat Model](#7-threat-model)
-8. [Security Properties](#8-security-properties)
-9. [Known Limitations & Future Work](#9-known-limitations--future-work)
-10. [Deployment Checklist](#10-deployment-checklist)
+8. [Error Catalogue](#8-error-catalogue)
+9. [Security Properties](#9-security-properties)
+10. [Known Limitations & Future Work](#10-known-limitations--future-work)
+11. [Deployment Checklist](#11-deployment-checklist)
 
 ---
 
@@ -58,11 +59,14 @@ PIFP replaces trust-based donations with **cryptographic accountability**. Funds
 ```
 contracts/pifp_protocol/src/
 ├── lib.rs        — Public entry points (contract interface)
+├── errors.rs     — Error catalogue (#[contracterror] enum with documented variants)
 ├── rbac.rs       — Role-Based Access Control
 ├── storage.rs    — Persistent & instance storage helpers + TTL management
 ├── types.rs      — Shared data types (Project, ProjectConfig, ProjectState, Role)
+├── events.rs     — On-chain event emission helpers
 ├── invariants.rs — Invariant assertions used in tests
 ├── test.rs       — Unit & integration tests
+├── test_errors.rs — Comprehensive error-path tests
 └── fuzz_test.rs  — Property-based fuzz tests (proptest)
 ```
 
@@ -394,7 +398,44 @@ Deposits are high-frequency. Writing the full `Project` struct (~150 bytes) on e
 
 ---
 
-## 8. Security Properties
+## 8. Error Catalogue
+
+Every contract error is defined in `errors.rs` as a `#[contracterror]` enum.
+Soroban surfaces these on-chain as `Error(Contract, #N)` where `N` is the
+discriminant shown below.
+
+| Code | Variant                  | Typical Trigger                                             |
+|------|--------------------------|-------------------------------------------------------------|
+|  1   | `ProjectNotFound`        | Querying or operating on a project ID that does not exist   |
+|  2   | `MilestoneNotFound`      | Reserved for future milestone-level operations              |
+|  3   | `MilestoneAlreadyReleased` | `verify_and_release` on an already-completed project      |
+|  4   | `InsufficientBalance`    | Refund requested but donator has zero balance for that token |
+|  5   | `InvalidMilestones`      | Reserved for future milestone validation                    |
+|  6   | `NotAuthorized`          | Caller lacks the RBAC role required for the operation       |
+|  7   | `InvalidGoal`            | Goal is ≤ 0 or exceeds the 10^30 upper bound               |
+|  8   | `AlreadyInitialized`     | `init` called more than once                                |
+|  9   | `RoleNotFound`           | Reserved for role-query edge cases                          |
+| 10   | `TooManyTokens`          | `accepted_tokens` list exceeds 10 tokens                    |
+| 11   | `InvalidAmount`          | Deposit or transfer amount is ≤ 0                           |
+| 12   | `DuplicateToken`         | `accepted_tokens` contains duplicate addresses              |
+| 13   | `InvalidDeadline`        | Deadline is in the past or more than 5 years away           |
+| 14   | `ProjectExpired`         | Operation attempted after the project deadline              |
+| 15   | `ProjectNotActive`       | Deposit/verify on a Completed or invalid-status project     |
+| 16   | `VerificationFailed`     | Submitted proof hash ≠ stored proof hash                    |
+| 17   | `EmptyAcceptedTokens`    | Registration with an empty token list                       |
+| 18   | `Overflow`               | Arithmetic overflow on balance addition                     |
+| 19   | `ProtocolPaused`         | Mutating operation while the protocol is paused             |
+| 20   | `GoalMismatch`           | Reserved for cross-token goal validation                    |
+| 21   | `ProjectNotExpired`      | Refund/expire attempted before the deadline                 |
+| 22   | `InvalidTransition`      | FSM transition not allowed (e.g. expiring a Completed project) |
+| 23   | `TokenNotAccepted`       | Deposit with a token not in the project's accepted list     |
+
+> **Backward compatibility:** Error codes are append-only. Existing codes must
+> never be renumbered or removed to avoid breaking off-chain error-handling logic.
+
+---
+
+## 9. Security Properties
 
 The following invariants **must hold at all times**:
 
@@ -413,7 +454,7 @@ The following invariants **must hold at all times**:
 
 ---
 
-## 9. Known Limitations & Future Work
+## 10. Known Limitations & Future Work
 
 | Item | Description |
 |------|-------------|
@@ -425,7 +466,7 @@ The following invariants **must hold at all times**:
 
 ---
 
-## 10. Deployment Checklist
+## 11. Deployment Checklist
 
 - [ ] Deploy the contract to a Soroban-enabled Stellar network.
 - [ ] Call `init(super_admin)` **exactly once** immediately after deployment with a secure multi-sig address as `super_admin`.

@@ -26,9 +26,10 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, panic_with_error, token, Address, BytesN, Env, Vec,
+    contract, contractimpl, panic_with_error, token, Address, BytesN, Env, Vec,
 };
 
+pub mod errors;
 pub mod events;
 pub mod rbac;
 mod storage;
@@ -52,7 +53,10 @@ mod test_expire;
 mod test_refund;
 #[cfg(test)]
 mod test_utils;
+#[cfg(test)]
+mod test_errors;
 
+pub use errors::Error;
 pub use events::emit_funds_released;
 pub use rbac::Role;
 use storage::{
@@ -61,33 +65,7 @@ use storage::{
 };
 pub use types::{Project, ProjectBalances, ProjectStatus};
 
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-#[repr(u32)]
-pub enum Error {
-    ProjectNotFound = 1,
-    MilestoneNotFound = 2,
-    MilestoneAlreadyReleased = 3,
-    InsufficientBalance = 4,
-    InvalidMilestones = 5,
-    NotAuthorized = 6,
-    InvalidGoal = 7,
-    AlreadyInitialized = 8,
-    RoleNotFound = 9,
-    TooManyTokens = 10,
-    InvalidAmount = 11,
-    DuplicateToken = 12,
-    InvalidDeadline = 13,
-    ProjectExpired = 14,
-    ProjectNotActive = 15,
-    VerificationFailed = 16,
-    EmptyAcceptedTokens = 17,
-    Overflow = 18,
-    ProtocolPaused = 19,
-    GoalMismatch = 20,
-    ProjectNotExpired = 21,
-    InvalidTransition = 22,
-}
+
 
 #[contract]
 pub struct PifpProtocol;
@@ -302,6 +280,15 @@ impl PifpProtocol {
         }
 
         // Verify token is accepted.
+        let mut found = false;
+        for t in config.accepted_tokens.iter() {
+            if t == token {
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            panic_with_error!(&env, Error::TokenNotAccepted);
         if !config.accepted_tokens.contains(&token) {
             panic_with_error!(&env, Error::NotAuthorized);
         }

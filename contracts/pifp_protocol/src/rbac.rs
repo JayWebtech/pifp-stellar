@@ -35,7 +35,7 @@
 
 use soroban_sdk::{contracttype, symbol_short, Address, Env, Vec};
 
-use crate::Error;
+use crate::errors::Error;
 
 // ─────────────────────────────────────────────────────────
 // Role enum — stored per address

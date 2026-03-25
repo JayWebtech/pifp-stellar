@@ -28,8 +28,9 @@
 //! ledger write costs by ~87% per deposit while keeping the public API clean via
 //! the reconstructed [`Project`] return type.
 
-use soroban_sdk::{contracttype, Address, Env, Vec};
+use soroban_sdk::{contracttype, panic_with_error, Address, Env, Vec};
 
+use crate::errors::Error;
 use crate::types::{Project, ProjectBalances, ProjectConfig, ProjectState, TokenBalance};
 
 // ── TTL Constants ────────────────────────────────────────────────────
@@ -153,7 +154,10 @@ pub fn save_project(env: &Env, project: &Project) {
 /// is a thin wrapper around [`maybe_load_project_config`].
 #[allow(dead_code)]
 pub fn load_project_config(env: &Env, id: u64) -> ProjectConfig {
-    maybe_load_project_config(env, id).expect("project not found")
+    match maybe_load_project_config(env, id) {
+        Some(config) => config,
+        None => panic_with_error!(env, Error::ProjectNotFound),
+    }
 }
 
 /// Load only the mutable project state.
@@ -162,7 +166,10 @@ pub fn load_project_config(env: &Env, id: u64) -> ProjectConfig {
 /// [`maybe_load_project_state`].
 #[allow(dead_code)]
 pub fn load_project_state(env: &Env, id: u64) -> ProjectState {
-    maybe_load_project_state(env, id).expect("project not found")
+    match maybe_load_project_state(env, id) {
+        Some(state) => state,
+        None => panic_with_error!(env, Error::ProjectNotFound),
+    }
 }
 
 /// Save only the mutable project state (optimized for deposits/verification).
@@ -226,16 +233,14 @@ pub fn load_project_pair(env: &Env, id: u64) -> (ProjectConfig, ProjectState) {
     let config_key = DataKey::ProjConfig(id);
     let state_key = DataKey::ProjState(id);
 
-    let config: ProjectConfig = env
-        .storage()
-        .persistent()
-        .get(&config_key)
-        .expect("project not found");
-    let state: ProjectState = env
-        .storage()
-        .persistent()
-        .get(&state_key)
-        .expect("project not found");
+    let config: ProjectConfig = match env.storage().persistent().get(&config_key) {
+        Some(c) => c,
+        None => panic_with_error!(env, Error::ProjectNotFound),
+    };
+    let state: ProjectState = match env.storage().persistent().get(&state_key) {
+        Some(s) => s,
+        None => panic_with_error!(env, Error::ProjectNotFound),
+    };
 
     bump_persistent(env, &config_key);
     bump_persistent(env, &state_key);
@@ -312,7 +317,10 @@ pub fn set_token_balance(env: &Env, project_id: u64, token: &Address, balance: i
 /// Returns the new balance.
 pub fn add_to_token_balance(env: &Env, project_id: u64, token: &Address, amount: i128) -> i128 {
     let current = get_token_balance(env, project_id, token);
-    let new_balance = current.checked_add(amount).expect("balance overflow");
+    let new_balance = match current.checked_add(amount) {
+        Some(b) => b,
+        None => panic_with_error!(env, Error::Overflow),
+    };
     set_token_balance(env, project_id, token, new_balance);
     new_balance
 }
@@ -379,9 +387,10 @@ pub fn add_to_donator_balance(
     amount: i128,
 ) -> i128 {
     let current = get_donator_balance(env, project_id, token, donator);
-    let new_balance = current
-        .checked_add(amount)
-        .expect("donator balance overflow");
+    let new_balance = match current.checked_add(amount) {
+        Some(b) => b,
+        None => panic_with_error!(env, Error::Overflow),
+    };
     set_donator_balance(env, project_id, token, donator, new_balance);
     new_balance
 }
