@@ -31,6 +31,10 @@
 //! | 21   | `ProjectNotExpired`      | Refund or expire attempted before the deadline has passed   |
 //! | 22   | `InvalidTransition`      | State-machine transition not allowed (e.g. expiring a Completed project) |
 //! | 23   | `TokenNotAccepted`       | Deposit attempted with a token not in the project's accepted list |
+//! | 24   | `ProtocolNotInitialized` | Contract state has not been initialized                     |
+//! | 25   | `ReleaseAmountExceedsBalance` | The requested release amount exceeds the project's current on-chain balance |
+//! | 26   | `MetadataCidInvalid`     | IPFS CID byte string was empty or exceeded max length       |
+//! | 27   | `FeeBpsExceedsMaximum`   | Configured fee in basis points exceeds the 10_000 hard cap  |
 
 use soroban_sdk::contracterror;
 
@@ -111,4 +115,18 @@ pub enum Error {
 
     /// The deposit token is not in the project's `accepted_tokens` list.
     TokenNotAccepted = 23,
+
+    /// A method that requires the protocol to be initialised was called before
+    /// `initialize()` had been executed on this contract instance.
+    ProtocolNotInitialized = 24,
+
+    /// The requested release amount exceeds the project's current on-chain balance.
+    ReleaseAmountExceedsBalance = 25,
+
+    /// The supplied IPFS CID byte string was either empty or exceeded the
+    /// maximum allowed length (`MAX_CID_LEN` = 64 bytes).
+    MetadataCidInvalid = 26,
+
+    /// The proposed fee in basis points exceeds the hard cap of 10 000 (= 100 %).
+    FeeBpsExceedsMaximum = 27,
 }
