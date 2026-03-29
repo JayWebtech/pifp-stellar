@@ -118,6 +118,12 @@ pub enum Error {
     /// The deposit token is not in the project's `accepted_tokens` list.
     TokenNotAccepted = 23,
 
+    /// The new deadline exceeds the 1-year extension limit.
+    DeadlineTooLong = 24,
+    /// Fee basis points exceed the maximum allowed (10%).
+    InvalidFeeBasisPoints = 25,
+    /// Address is not on the project's whitelist.
+    NotWhitelisted = 26,
     /// The donor refund window is still active; creator cannot reclaim yet.
     RefundWindowActive = 24,
 

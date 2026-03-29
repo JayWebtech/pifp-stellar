@@ -60,6 +60,7 @@ pub struct ProjectConfig {
     pub goal: i128,
     pub proof_hash: BytesN<32>,
     pub deadline: u64,
+    pub is_private: bool,
     pub metadata_uri: Bytes,
 }
 
@@ -108,6 +109,8 @@ pub struct Project {
     /// Count of unique (token, donator) pairs that have donated.
     /// Informational; incremented on each new deposit.
     pub donation_count: u32,
+    /// Is this a private project (whitelist only)?
+    pub is_private: bool,
     /// Ledger timestamp after which donors can no longer refund and the
     /// creator may reclaim unclaimed funds.  Zero while non-terminal.
     pub refund_expiry: u64,
@@ -139,4 +142,13 @@ pub struct TokenBalance {
 pub struct ProjectBalances {
     pub project_id: u64,
     pub balances: Vec<TokenBalance>,
+}
+/// Global protocol configuration managed by the SuperAdmin.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProtocolConfig {
+    /// Recipient of the platform fee.
+    pub fee_recipient: Address,
+    /// Platform fee in basis points (1 BPS = 0.01%).
+    pub fee_bps: u32,
 }

@@ -62,16 +62,25 @@ mod test_refund;
 #[cfg(test)]
 mod test_reclaim;
 #[cfg(test)]
+mod test_deadline;
+#[cfg(test)]
+mod test_errors;
+#[cfg(test)]
+mod test_protocol_config;
+#[cfg(test)]
+mod test_whitelist;
 mod test_utils;
 
 pub use errors::Error;
 pub use events::emit_funds_released;
 pub use rbac::Role;
 use storage::{
-    drain_token_balance, get_all_balances, get_and_increment_project_id, load_project,
-    load_project_pair, maybe_load_project, save_project, save_project_state,
+    add_to_whitelist, drain_token_balance, get_all_balances, get_and_increment_project_id,
+    get_protocol_config, is_whitelisted, load_project, load_project_pair, maybe_load_project,
+    remove_from_whitelist, save_project, save_project_config, save_project_state,
+    set_protocol_config,
 };
-pub use types::{Project, ProjectBalances, ProjectStatus};
+pub use types::{Project, ProjectBalances, ProjectConfig, ProjectState, ProtocolConfig};
 
 #[contract]
 pub struct PifpProtocol;
@@ -175,6 +184,7 @@ impl PifpProtocol {
         proof_hash: BytesN<32>,
         metadata_uri: Bytes,
         deadline: u64,
+        is_private: bool,
     ) -> Project {
         Self::require_not_paused(&env);
         creator.require_auth();
@@ -224,6 +234,7 @@ impl PifpProtocol {
             deadline,
             status: ProjectStatus::Funding,
             donation_count: 0,
+            is_private,
             refund_expiry: 0,
         };
 
@@ -235,6 +246,83 @@ impl PifpProtocol {
         }
 
         project
+    }
+
+    /// Extend a project's deadline.
+    ///
+    /// - `caller` must hold `ProjectManager`, `Admin`, or `SuperAdmin`.
+    /// - Project must be in `Funding` or `Active` state.
+    /// - New deadline must be later than the current one.
+    /// - Total extension cannot exceed 1 year from the current ledger time.
+    pub fn extend_deadline(env: Env, caller: Address, project_id: u64, new_deadline: u64) {
+        Self::require_not_paused(&env);
+        caller.require_auth();
+        rbac::require_can_register(&env, &caller);
+
+        let (mut config, state) = load_project_pair(&env, project_id);
+
+        // State check: must be Funding or Active.
+        match state.status {
+            ProjectStatus::Funding | ProjectStatus::Active => {}
+            _ => panic_with_error!(&env, Error::ProjectNotActive),
+        }
+
+        let now = env.ledger().timestamp();
+        
+        // Ensure the project hasn't already expired by current time.
+        if now >= config.deadline {
+            panic_with_error!(&env, Error::ProjectExpired);
+        }
+
+        // New deadline must be in the future relative to current deadline.
+        if new_deadline <= config.deadline {
+            panic_with_error!(&env, Error::InvalidDeadline);
+        }
+
+        // Extension limit block: max 1 year (365 days) from now.
+        let one_year_from_now = now + 31_536_000;
+        if new_deadline > one_year_from_now {
+            panic_with_error!(&env, Error::DeadlineTooLong);
+        }
+
+        let old_deadline = config.deadline;
+        config.deadline = new_deadline;
+
+        save_project_config(&env, project_id, &config);
+
+        events::emit_deadline_extended(&env, project_id, old_deadline, new_deadline);
+    }
+
+    /// Add an address to a project's whitelist.
+    ///
+    /// - `caller` must be the project creator or an Admin.
+    pub fn add_to_whitelist(env: Env, caller: Address, project_id: u64, address: Address) {
+        caller.require_auth();
+        let config = storage::load_project_config(&env, project_id);
+        
+        // Auth check: creator or Admin/SuperAdmin
+        if caller != config.creator {
+            rbac::require_admin_or_above(&env, &caller);
+        }
+
+        storage::add_to_whitelist(&env, project_id, &address);
+        events::emit_whitelist_added(&env, project_id, address);
+    }
+
+    /// Remove an address from a project's whitelist.
+    ///
+    /// - `caller` must be the project creator or an Admin.
+    pub fn remove_from_whitelist(env: Env, caller: Address, project_id: u64, address: Address) {
+        caller.require_auth();
+        let config = storage::load_project_config(&env, project_id);
+        
+        // Auth check: creator or Admin/SuperAdmin
+        if caller != config.creator {
+            rbac::require_admin_or_above(&env, &caller);
+        }
+
+        storage::remove_from_whitelist(&env, project_id, &address);
+        events::emit_whitelist_removed(&env, project_id, address);
     }
 
     pub fn get_project(env: Env, id: u64) -> Project {
@@ -291,6 +379,13 @@ impl PifpProtocol {
                 save_project_state(&env, project_id, &state);
             }
             panic_with_error!(&env, Error::ProjectExpired);
+        }
+
+        // Whitelist check
+        if config.is_private {
+            if !is_whitelisted(&env, project_id, &donator) {
+                panic_with_error!(&env, Error::NotWhitelisted);
+            }
         }
 
         // Basic status check: must be Funding or Active.
@@ -445,6 +540,29 @@ impl PifpProtocol {
         rbac::grant_role(&env, &caller, &oracle, Role::Oracle);
     }
 
+    /// Update the global protocol configuration.
+    ///
+    /// - `caller` must be the `SuperAdmin`.
+    /// - `fee_bps` must be less than or equal to 1000 (10%).
+    pub fn update_protocol_config(env: Env, caller: Address, fee_recipient: Address, fee_bps: u32) {
+        caller.require_auth();
+        rbac::require_super_admin(&env, &caller);
+
+        if fee_bps > 1000 {
+            panic_with_error!(&env, Error::InvalidFeeBasisPoints);
+        }
+
+        let old_config = get_protocol_config(&env);
+        let new_config = ProtocolConfig {
+            fee_recipient,
+            fee_bps,
+        };
+
+        set_protocol_config(&env, &new_config);
+
+        events::emit_protocol_config_updated(&env, old_config, new_config);
+    }
+
     /// Verify proof of impact and release funds to the creator.
     ///
     /// The registered oracle submits a proof hash. If it matches the project's
@@ -497,18 +615,50 @@ impl PifpProtocol {
         // Transfer all deposited tokens to the creator.
         // If any transfer fails, panic to revert the entire transaction.
         let contract_address = env.current_contract_address();
+        let protocol_config = get_protocol_config(&env);
+
         for token in config.accepted_tokens.iter() {
             // Drain the token balance (gets balance and zeros it).
-            let balance = drain_token_balance(&env, project_id, &token);
+            let mut balance = drain_token_balance(&env, project_id, &token);
 
             // Only transfer if there's a non-zero balance.
             if balance > 0 {
-                // Create token client and transfer to creator.
                 let token_client = token::Client::new(&env, &token);
-                token_client.transfer(&contract_address, &config.creator, &balance);
 
-                // Emit funds_released event for this token.
-                events::emit_funds_released(&env, project_id, token, balance);
+                // Deduct platform fee if configured.
+                if let Some(config) = &protocol_config {
+                    if config.fee_bps > 0 {
+                        // fee = balance * bps / 10000
+                        let fee_amount = balance
+                            .checked_mul(config.fee_bps as i128)
+                            .unwrap_or(0)
+                            .checked_div(10000)
+                            .unwrap_or(0);
+
+                        if fee_amount > 0 {
+                            token_client.transfer(
+                                &contract_address,
+                                &config.fee_recipient,
+                                &fee_amount,
+                            );
+                            balance = balance.checked_sub(fee_amount).unwrap_or(balance);
+                            events::emit_fee_deducted(
+                                &env,
+                                project_id,
+                                token.clone(),
+                                fee_amount,
+                                config.fee_recipient.clone(),
+                            );
+                        }
+                    }
+                }
+
+                // Transfer remaining to creator.
+                if balance > 0 {
+                    token_client.transfer(&contract_address, &config.creator, &balance);
+                    // Emit funds_released event for this token.
+                    events::emit_funds_released(&env, project_id, token, balance);
+                }
             }
         }
 
