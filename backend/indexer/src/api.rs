@@ -58,6 +58,7 @@ pub struct ErrorResponse {
 pub struct ProjectQuery {
     pub status: Option<String>,
     pub creator: Option<String>,
+    pub category: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
 }
@@ -112,25 +113,6 @@ pub struct ProfileRequest {
     pub signature: String,
     #[serde(flatten)]
     pub update: ProfileUpdate,
-}
-
-fn verify_profile_signature(address: &str, signature_b64: &str) -> bool {
-    let Ok(strkey) = StellarPublicKey::from_string(address) else {
-        return false;
-    };
-    let Ok(sig_bytes) = base64::engine::general_purpose::STANDARD.decode(signature_b64) else {
-        return false;
-    };
-    let Ok(sig_array): Result<&[u8; 64], _> = sig_bytes.as_slice().try_into() else {
-        return false;
-    };
-    let sig = Signature::from_bytes(sig_array);
-    let Ok(vk) = VerifyingKey::from_bytes(&strkey.0) else {
-        return false;
-    };
-    let message = format!("pifp-profile:{address}");
-    use ed25519_dalek::Verifier;
-    vk.verify(message.as_bytes(), &sig).is_ok()
 }
 
 #[derive(Deserialize)]
@@ -214,15 +196,31 @@ pub async fn get_project_history_paged(
 
 /// `GET /projects`
 ///
-/// Returns all projects matching optional filters (status, creator), with pagination.
+/// Returns all projects matching optional filters (status, creator, category), with pagination.
 pub async fn get_projects(
     State(state): State<Arc<ApiState>>,
     Query(query): Query<ProjectQuery>,
 ) -> impl IntoResponse {
     let limit = query.limit.unwrap_or(20);
     let offset = query.offset.unwrap_or(0);
+    let categories = query.category.as_deref().map(|csv| {
+        csv.split(',')
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>()
+    });
 
-    match db::list_projects(&state.pool, query.status, query.creator, limit, offset).await {
+    match db::list_projects(
+        &state.pool,
+        query.status,
+        query.creator,
+        categories,
+        limit,
+        offset,
+    )
+    .await
+    {
         Ok(projects) => {
             let count = projects.len();
             (
