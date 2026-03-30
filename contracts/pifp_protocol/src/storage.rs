@@ -32,7 +32,8 @@ use soroban_sdk::{contracttype, panic_with_error, Address, Env, Vec};
 
 use crate::errors::Error;
 use crate::types::{
-    Project, ProjectBalances, ProjectConfig, ProjectState, ProtocolConfig, TokenBalance,
+    OracleAgreement, Project, ProjectBalances, ProjectConfig, ProjectState, ProtocolConfig,
+    TokenBalance,
 };
 
 // ── TTL Constants ────────────────────────────────────────────────────
@@ -74,6 +75,8 @@ pub enum DataKey {
     ProtocolConfig,
     /// Whitelisted donator for a project (Persistent).
     Whitelist(u64, Address),
+    /// In-flight oracle vote agreement for a project (Temporary).
+    OracleAgreement(u64),
 }
 
 // ── Instance Storage Helpers ─────────────────────────────────────────
@@ -466,4 +469,36 @@ pub fn add_to_whitelist(env: &Env, project_id: u64, address: &Address) {
 pub fn remove_from_whitelist(env: &Env, project_id: u64, address: &Address) {
     let key = DataKey::Whitelist(project_id, address.clone());
     env.storage().persistent().remove(&key);
+}
+
+// ── Oracle Agreement Helpers (Temporary Storage) ─────────────────────
+
+/// Approximate ledgers for 1 day — used as TTL for temporary oracle agreement.
+const TEMP_AGREEMENT_TTL: u32 = 17_280;
+
+/// Load the current `OracleAgreement` for a project, or return a zeroed default.
+pub fn load_oracle_agreement(env: &Env, project_id: u64) -> OracleAgreement {
+    let key = DataKey::OracleAgreement(project_id);
+    env.storage()
+        .temporary()
+        .get::<DataKey, OracleAgreement>(&key)
+        .unwrap_or(OracleAgreement {
+            votes: 0,
+            voter_count: 0,
+        })
+}
+
+/// Persist an updated `OracleAgreement` with a 1-day TTL.
+pub fn save_oracle_agreement(env: &Env, project_id: u64, agreement: &OracleAgreement) {
+    let key = DataKey::OracleAgreement(project_id);
+    env.storage().temporary().set(&key, agreement);
+    env.storage()
+        .temporary()
+        .extend_ttl(&key, TEMP_AGREEMENT_TTL, TEMP_AGREEMENT_TTL);
+}
+
+/// Remove the `OracleAgreement` entry once the threshold is met.
+pub fn clear_oracle_agreement(env: &Env, project_id: u64) {
+    let key = DataKey::OracleAgreement(project_id);
+    env.storage().temporary().remove(&key);
 }

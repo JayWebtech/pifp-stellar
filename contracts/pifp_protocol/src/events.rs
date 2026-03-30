@@ -1,4 +1,4 @@
-#![allow(deprecated)]
+//! On-chain event definitions and emission helpers for the PIFP protocol.
 
 use soroban_sdk::{contractevent, contracttype, symbol_short, Address, BytesN, Env};
 
@@ -69,16 +69,15 @@ use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProjectCreated {
+pub struct FundsReleased {
     pub project_id: u64,
-    pub creator: Address,
     pub token: Address,
-    pub goal: i128,
+    pub amount: i128,
 }
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProjectFunded {
+pub struct Refunded {
     pub project_id: u64,
     pub donator: Address,
     pub amount: i128,
@@ -86,23 +85,23 @@ pub struct ProjectFunded {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProjectActive {
+pub struct ExpiredFundsReclaimed {
     pub project_id: u64,
+    pub creator: Address,
+    pub token: Address,
+    pub amount: i128,
 }
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProjectVerified {
-    pub project_id: u64,
-    pub oracle: Address,
-    pub proof_hash: BytesN<32>,
+pub struct ProtocolPaused {
+    pub admin: Address,
 }
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProjectExpired {
-    pub project_id: u64,
-    pub deadline: u64,
+pub struct ProtocolUnpaused {
+    pub admin: Address,
 }
 
 #[contracttype]
@@ -145,6 +144,7 @@ pub struct WhitelistRemoved {
     pub address: Address,
 }
 
+/// Emitted each time an oracle casts a vote via `verify_and_release`.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProjectCancelled {
@@ -170,21 +170,25 @@ pub struct ProjectUnpaused {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FundsReleased {
     pub project_id: u64,
-    pub token: Address,
-    pub amount: i128,
+    pub oracle: Address,
+    /// Bit index of this oracle in the project's authorized list.
+    pub oracle_index: u32,
+    /// Running count of unique votes after this one.
+    pub voter_count: u32,
+    /// Threshold required to release funds.
+    pub threshold: u32,
 }
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Refunded {
+pub struct OracleAdded {
     pub project_id: u64,
-    pub donator: Address,
-    pub amount: i128,
+    pub oracle: Address,
 }
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ExpiredFundsReclaimed {
+pub struct OracleRemoved {
     pub project_id: u64,
     pub creator: Address,
     pub token: Address,
@@ -203,7 +207,7 @@ pub struct ProtocolUnpaused {
     pub admin: Address,
 }
 
-// ── Emission helpers ────────────────────────────────────────────────
+// ── Emission helpers ──────────────────────────────────────────────────────────
 
 pub fn emit_project_created(
     env: &Env,
@@ -300,27 +304,17 @@ pub fn emit_refunded(env: &Env, project_id: u64, donator: Address, amount: i128)
 
 pub fn emit_deadline_extended(env: &Env, project_id: u64, old_deadline: u64, new_deadline: u64) {
     let topics = (symbol_short!("ext_dead"), project_id);
-    let data = DeadlineExtended {
-        project_id,
-        old_deadline,
-        new_deadline,
-    };
-    env.events().publish(topics, data);
+    env.events().publish(topics, DeadlineExtended { project_id, old_deadline, new_deadline });
 }
 
-pub fn emit_protocol_config_updated(
-    env: &Env,
-    old_config: Option<ProtocolConfig>,
-    new_config: ProtocolConfig,
-) {
+pub fn emit_protocol_config_updated(env: &Env, old_config: Option<ProtocolConfig>, new_config: ProtocolConfig) {
     let topics = (symbol_short!("cfg_upd"),);
     let data = ProtocolConfigUpdated {
         old_fee_recipient: old_config.as_ref().map(|cfg| cfg.fee_recipient.clone()),
         old_fee_bps: old_config.map_or(0, |cfg| cfg.fee_bps),
         new_fee_recipient: new_config.fee_recipient.clone(),
         new_fee_bps: new_config.fee_bps,
-    };
-    env.events().publish(topics, data);
+    });
 }
 
 pub fn emit_fee_deducted(

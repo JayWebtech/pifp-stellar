@@ -36,7 +36,6 @@ prometheus = { version = "0.14", features = ["process"] }
 lazy_static = "1"
 governor = { version = "0.10", features = ["dashmap"] }
 dashmap = "6"
-
 # Sentry error tracking
 sentry = { version = "0.34", default-features = false, features = ["backtrace", "contexts", "panic", "reqwest", "rustls"] }
 sentry-tracing = "0.34"
