@@ -135,6 +135,10 @@ pub enum Error {
     RefundWindowExpired = 28,
     /// A method that requires the protocol to be initialised was called before
     /// `initialize()` had been executed on this contract instance.
+    ProtocolNotInitialized = 28,
+
+    /// The requested release amount exceeds the project's current on-chain balance.
+    ReleaseAmountExceedsBalance = 29,
     ProtocolNotInitialized = 29,
 
     /// The requested release amount exceeds the project's current on-chain balance.
