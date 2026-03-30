@@ -32,8 +32,8 @@ use soroban_sdk::{contracttype, panic_with_error, Address, Env, Vec};
 
 use crate::errors::Error;
 use crate::types::{
-    OracleAgreement, Project, ProjectBalances, ProjectConfig, ProjectState, ProtocolConfig,
-    TokenBalance,
+    DepositRequest, Milestone, OracleAgreement, Project, ProjectBalances, ProjectConfig,
+    ProjectState, ProtocolConfig, TokenBalance,
 };
 
 // ── TTL Constants ────────────────────────────────────────────────────
@@ -159,7 +159,7 @@ pub fn save_project(env: &Env, project: &Project) {
         deadline: project.deadline,
         is_private: project.is_private,
         metadata_uri: project.metadata_uri.clone(),
-        milestones: project.milestones.clone(), // Updated
+        milestones: project.milestones.clone(),
     };
 
     let state = ProjectState {
@@ -167,7 +167,8 @@ pub fn save_project(env: &Env, project: &Project) {
         donation_count: project.donation_count,
         paused: project.paused,
         refund_expiry: project.refund_expiry,
-        completed_milestones: project.completed_milestones.clone(), // Updated
+        last_proof_time: project.last_proof_time,
+        completed_milestones: project.completed_milestones.clone(),
     };
 
     env.storage().persistent().set(&config_key, &config);
@@ -263,7 +264,7 @@ pub fn maybe_load_project_state(env: &Env, id: u64) -> Option<ProjectState> {
 /// caller performing two separate lookups (which would each bump TTLs and
 /// incur independent gas costs), this helper reads both entries, bumps both
 /// TTLs, and returns them together. It is heavily used by high‑frequency
-/// operations such as `deposit` and `verify_and_release`.
+/// operations such as `deposit` and `verify_proof`.
 ///
 /// Panics with `project not found` if either component is missing.
 pub fn load_project_pair(env: &Env, id: u64) -> (ProjectConfig, ProjectState) {
@@ -304,8 +305,10 @@ pub fn load_project(env: &Env, id: u64) -> Project {
         is_private: config.is_private,
         paused: state.paused,
         refund_expiry: state.refund_expiry,
-        milestones: config.milestones,                 // Updated
-        completed_milestones: state.completed_milestones, // Updated
+        categories: config.categories,
+        last_proof_time: state.last_proof_time,
+        milestones: config.milestones,
+        completed_milestones: state.completed_milestones,
     }
 }
 
@@ -318,8 +321,6 @@ pub fn load_project(env: &Env, id: u64) -> Project {
 pub fn maybe_load_project(env: &Env, id: u64) -> Option<Project> {
     let config = maybe_load_project_config(env, id)?;
 
-    // If config exists, state must exist. This maintains the invariant while avoiding
-    // a redundant .has() check before .get().
     let state_key = DataKey::ProjState(id);
     let state: ProjectState = env
         .storage()
@@ -341,6 +342,9 @@ pub fn maybe_load_project(env: &Env, id: u64) -> Option<Project> {
         paused: state.paused,
         refund_expiry: state.refund_expiry,
         categories: config.categories,
+        last_proof_time: state.last_proof_time,
+        milestones: config.milestones,
+        completed_milestones: state.completed_milestones,
     })
 }
 
@@ -376,7 +380,7 @@ pub fn add_to_token_balance(env: &Env, project_id: u64, token: &Address, amount:
 }
 
 /// Zero out the balance of `token` for `project_id` and return what it was.
-/// Called during `verify_and_release` after transferring funds to the creator.
+/// Called during `claim_funds` after transferring funds to the creator.
 #[allow(dead_code)]
 pub fn drain_token_balance(env: &Env, project_id: u64, token: &Address) -> i128 {
     let balance = get_token_balance(env, project_id, token);

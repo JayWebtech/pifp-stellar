@@ -30,8 +30,18 @@ fn test_get_project_balances_not_found() {
 fn test_verify_already_completed_project() {
     let ctx = TestContext::new();
     let (project, _, _) = ctx.setup_project(1000);
-    ctx.client.verify_and_release(&ctx.oracle, &project.id, &ctx.dummy_proof());
-    ctx.client.verify_and_release(&ctx.oracle, &project.id, &ctx.dummy_proof());
+
+    // First verification succeeds.
+    ctx.client
+        .verify_proof(&ctx.oracle, &project.id, &ctx.dummy_proof());
+
+    // Transition to Completed by claiming.
+    ctx.jump_time(86_400); // grace period
+    ctx.client.claim_funds(&project.id);
+
+    // Second verification must fail with MilestoneAlreadyReleased or similar.
+    ctx.client
+        .verify_proof(&ctx.oracle, &project.id, &ctx.dummy_proof());
 }
 
 #[test]
@@ -68,15 +78,28 @@ fn test_register_deadline_too_far_in_future_fails() {
     let ctx = TestContext::new();
     let tokens = Vec::from_array(&ctx.env, [ctx.generate_address()]);
     let too_far_deadline = ctx.env.ledger().timestamp() + 200_000_000;
-    let empty_oracles: soroban_sdk::Vec<soroban_sdk::Address> = soroban_sdk::Vec::new(&ctx.env);
+    
+    let proof_hash = ctx.dummy_proof();
+    let metadata_uri = ctx.dummy_metadata_uri();
+    let mut milestones = Vec::new(&ctx.env);
+    milestones.push_back(crate::types::Milestone {
+        label: BytesN::from_array(&ctx.env, &[0u8; 32]),
+        amount_bps: 10000,
+        proof_hash: proof_hash.clone(),
+    });
+
     ctx.client.register_project(
         &ctx.manager,
         &tokens,
         &1000i128,
-        &ctx.dummy_proof(),
-        &ctx.dummy_metadata_uri(),
+        &proof_hash,
+        &metadata_uri,
         &too_far_deadline,
         &false,
+        &milestones,
+        &0u32,
+        &Vec::new(&ctx.env),
+        &0u32,
     );
 }
 
@@ -86,7 +109,8 @@ fn test_verify_wrong_proof_hash_fails() {
     let ctx = TestContext::new();
     let (project, _, _) = ctx.setup_project(1000);
     let wrong_proof = BytesN::from_array(&ctx.env, &[0xffu8; 32]);
-    ctx.client.verify_and_release(&ctx.oracle, &project.id, &wrong_proof);
+    ctx.client
+        .verify_proof(&ctx.oracle, &project.id, &wrong_proof);
 }
 
 #[test]
@@ -103,7 +127,8 @@ fn test_verify_when_paused_fails() {
     let ctx = TestContext::new();
     let (project, _, _) = ctx.setup_project(1000);
     ctx.client.pause(&ctx.admin);
-    ctx.client.verify_and_release(&ctx.oracle, &project.id, &ctx.dummy_proof());
+    ctx.client
+        .verify_proof(&ctx.oracle, &project.id, &ctx.dummy_proof());
 }
 
 #[test]
@@ -119,7 +144,14 @@ fn test_expire_project_before_deadline_fails() {
 fn test_expire_completed_project_fails_with_invalid_transition() {
     let ctx = TestContext::new();
     let (project, _, _) = ctx.setup_project(1000);
-    ctx.client.verify_and_release(&ctx.oracle, &project.id, &ctx.dummy_proof());
+
+    // Complete the project.
+    ctx.client
+        .verify_proof(&ctx.oracle, &project.id, &ctx.dummy_proof());
+    ctx.jump_time(86_400); // grace period
+    ctx.client.claim_funds(&project.id);
+
+    // Attempt to expire it — should fail with InvalidTransition.
     ctx.jump_time(project.deadline + 1);
     ctx.client.expire_project(&project.id);
 }

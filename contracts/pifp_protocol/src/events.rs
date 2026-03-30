@@ -141,10 +141,6 @@ pub struct FundsReleased {
     pub project_id: u64,
     pub token: Address,
     pub amount: i128,
-    pub oracle: Option<Address>,
-    pub oracle_index: Option<u32>,
-    pub voter_count: Option<u32>,
-    pub threshold: Option<u32>,
 }
 
 #[contracttype]
@@ -159,6 +155,23 @@ pub struct OracleAdded {
 pub struct OracleRemoved {
     pub project_id: u64,
     pub oracle: Address,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FundsClaimed {
+    pub project_id: u64,
+    pub creator: Address,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleVoted {
+    pub project_id: u64,
+    pub oracle: Address,
+    pub index: u32,
+    pub voter_count: u32,
+    pub threshold: u32,
 }
 
 // ── Emission helpers ──────────────────────────────────────────────────────────
@@ -241,20 +254,12 @@ pub fn emit_funds_released(
     project_id: u64,
     token: Address,
     amount: i128,
-    oracle: Option<Address>,
-    oracle_index: Option<u32>,
-    voter_count: Option<u32>,
-    threshold: Option<u32>,
 ) {
-    let topics = (symbol_short!("fund_rel"), project_id);
+    let topics = (symbol_short!("fnd_rel"), project_id);
     let data = FundsReleased {
         project_id,
         token,
         amount,
-        oracle,
-        oracle_index,
-        voter_count,
-        threshold,
     };
     env.events().publish(topics, data);
 }
@@ -349,14 +354,32 @@ pub fn emit_protocol_unpaused(env: &Env, admin: Address) {
     env.events().publish(topics, data);
 }
 
-pub fn emit_milestone_verified(
+pub fn emit_funds_claimed(env: &Env, project_id: u64, creator: Address) {
+    let topics = (symbol_short!("fnd_clm"), project_id);
+    let data = FundsClaimed {
+        project_id,
+        creator,
+    };
+    env.events().publish(topics, data);
+}
+
+pub fn emit_oracle_voted(
     env: &Env,
     project_id: u64,
-    milestone_index: u32,
-    bps: u32,
+    oracle: Address,
+    index: u32,
+    voter_count: u32,
+    threshold: u32,
 ) {
-    let topics = (MILESTONE_VERIFIED, project_id, milestone_index);
-    env.events().publish(topics, bps);
+    let topics = (symbol_short!("ora_voted"), project_id);
+    let data = OracleVoted {
+        project_id,
+        oracle,
+        index,
+        voter_count,
+        threshold,
+    };
+    env.events().publish(topics, data);
 }
 
 pub fn emit_oracle_added(env: &Env, project_id: u64, oracle: Address) {
@@ -369,4 +392,14 @@ pub fn emit_oracle_removed(env: &Env, project_id: u64, oracle: Address) {
     let topics = (symbol_short!("ora_rem"), project_id);
     let data = OracleRemoved { project_id, oracle };
     env.events().publish(topics, data);
+}
+
+pub fn emit_milestone_verified(
+    env: &Env,
+    project_id: u64,
+    milestone_index: u32,
+    bps: u32,
+) {
+    let topics = (MILESTONE_VERIFIED, project_id, milestone_index);
+    env.events().publish(topics, bps);
 }

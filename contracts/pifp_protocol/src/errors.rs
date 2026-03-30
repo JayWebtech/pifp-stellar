@@ -10,7 +10,7 @@
 //! |------|--------------------------|-------------------------------------------------------------|
 //! |  1   | `ProjectNotFound`        | Querying or operating on a project ID that does not exist   |
 //! |  2   | `MilestoneNotFound`      | Reserved for future milestone-level operations              |
-//! |  3   | `MilestoneAlreadyReleased` | Calling `verify_and_release` on an already-completed project |
+//! |  3   | `MilestoneAlreadyReleased` | Calling `verify_proof` on an already-verified/completed project |
 //! |  4   | `InsufficientBalance`    | Refund requested but donator has zero balance for that token |
 //! |  5   | `InvalidMilestones`      | Reserved for future milestone validation                    |
 //! |  6   | `NotAuthorized`          | Caller lacks the RBAC role required for the operation       |
@@ -41,6 +41,7 @@
 //! | 31   | `MetadataCidInvalid`     | IPFS CID byte string was empty or exceeded max length |
 //! | 32   | `FeeBpsExceedsMaximum`   | Configured fee in basis points exceeds the 10_000 hard cap |
 //! | 33   | `ProjectPaused`          | Mutating project action attempted while the project is paused |
+//! | 34   | `GracePeriodActive`      | `claim_funds` called before the 24-hour grace period has elapsed |
 
 use soroban_sdk::contracterror;
 
@@ -147,4 +148,10 @@ pub enum Error {
 
     /// The proposed fee in basis points exceeds the hard cap of 10,000.
     FeeBpsExceedsMaximum = 32,
+
+    /// The target project is paused; deposits and releases are temporarily blocked.
+    ProjectPaused = 33,
+
+    /// The 24-hour grace period after proof verification has not yet elapsed.
+    GracePeriodActive = 34,
 }

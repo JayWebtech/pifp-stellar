@@ -52,6 +52,7 @@ fn test_refund_success_after_expiry() {
         &dummy_metadata_uri(&env),
         &deadline,
         &false,
+        &0u32,
     );
 
     let token_sac = token::StellarAssetClient::new(&env, &token.address);
@@ -90,6 +91,7 @@ fn test_refund_fails_when_not_expired() {
         &dummy_metadata_uri(&env),
         &deadline,
         &false,
+        &0u32,
     );
 
     let token_sac = token::StellarAssetClient::new(&env, &token.address);
@@ -122,6 +124,7 @@ fn test_refund_double_refund_fails() {
         &dummy_metadata_uri(&env),
         &deadline,
         &false,
+        &0u32,
     );
 
     let token_sac = token::StellarAssetClient::new(&env, &token.address);
@@ -157,6 +160,7 @@ fn test_refund_wrong_donator_fails() {
         &dummy_metadata_uri(&env),
         &deadline,
         &false,
+        &0u32,
     );
 
     let token_sac = token::StellarAssetClient::new(&env, &token.address);
@@ -189,6 +193,7 @@ fn test_refund_success_after_cancellation() {
         &dummy_metadata_uri(&env),
         &deadline,
         &false,
+        &0u32,
     );
 
     let token_sac = token::StellarAssetClient::new(&env, &token.address);
@@ -224,6 +229,7 @@ fn test_refund_distribution_after_cancellation_multi_donor() {
         &dummy_metadata_uri(&env),
         &deadline,
         &false,
+        &0u32,
     );
 
     let token_sac = token::StellarAssetClient::new(&env, &token.address);
