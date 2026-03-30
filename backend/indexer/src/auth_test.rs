@@ -8,8 +8,8 @@
 
 use base64::Engine;
 use ed25519_dalek::{Signer, SigningKey};
-use rand::rngs::OsRng;
 use stellar_strkey::ed25519::PublicKey as StellarPublicKey;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use crate::middleware::auth::{verify_profile_signature, AuthError};
 
@@ -17,8 +17,11 @@ use crate::middleware::auth::{verify_profile_signature, AuthError};
 
 /// Generate a fresh keypair and return (stellar_address, signing_key).
 fn make_keypair() -> (String, SigningKey) {
-    let sk = SigningKey::generate(&mut OsRng);
-    let address = StellarPublicKey(sk.verifying_key().to_bytes()).to_string();
+    static NEXT_SEED: AtomicU8 = AtomicU8::new(1);
+    let seed = NEXT_SEED.fetch_add(1, Ordering::Relaxed);
+    let secret = [seed; 32];
+    let sk = SigningKey::from_bytes(&secret);
+    let address = format!("{}", StellarPublicKey(sk.verifying_key().to_bytes()));
     (address, sk)
 }
 

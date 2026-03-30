@@ -14,7 +14,6 @@ mod indexer;
 mod middleware;
 mod profiles;
 mod metrics;
-mod profiles;
 mod rpc;
 mod webhook;
 

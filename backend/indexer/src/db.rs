@@ -768,6 +768,21 @@ mod tests {
         sqlx::query("INSERT INTO project_stats (id, total_projects, total_tvl, total_donors, completed_projects, failed_projects) VALUES (1, 0, '0', 0, 0, 0);").execute(&pool).await.unwrap();
 
         sqlx::query(
+            "CREATE TABLE projects (project_id TEXT PRIMARY KEY, creator TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Funding', goal TEXT NOT NULL, primary_token TEXT NOT NULL, created_ledger INTEGER NOT NULL, created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')));",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("CREATE INDEX idx_projects_status ON projects (status);")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("CREATE INDEX idx_projects_creator ON projects (creator);")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        sqlx::query(
             "CREATE TABLE project_tags (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL, tag_name TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')), UNIQUE(project_id, tag_name));",
         )
         .execute(&pool)

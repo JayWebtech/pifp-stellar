@@ -105,25 +105,6 @@ pub struct ProfileRequest {
     pub update: ProfileUpdate,
 }
 
-fn verify_profile_signature(address: &str, signature_b64: &str) -> bool {
-    let Ok(strkey) = StellarPublicKey::from_string(address) else {
-        return false;
-    };
-    let Ok(sig_bytes) = base64::engine::general_purpose::STANDARD.decode(signature_b64) else {
-        return false;
-    };
-    let Ok(sig_array): Result<&[u8; 64], _> = sig_bytes.as_slice().try_into() else {
-        return false;
-    };
-    let sig = Signature::from_bytes(sig_array);
-    let Ok(vk) = VerifyingKey::from_bytes(&strkey.0) else {
-        return false;
-    };
-    let message = format!("pifp-profile:{address}");
-    use ed25519_dalek::Verifier;
-    vk.verify(message.as_bytes(), &sig).is_ok()
-}
-
 #[derive(Deserialize)]
 pub struct TopProjectsQuery {
     pub limit: Option<u32>,
